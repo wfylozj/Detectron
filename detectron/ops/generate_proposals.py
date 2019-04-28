@@ -30,17 +30,13 @@ import detectron.utils.boxes as box_utils
 class GenerateProposalsOp(object):
     """Output object detection proposals by applying estimated bounding-box
     transformations to a set of regular boxes (called "anchors").
-
-    See comment in utils/boxes:bbox_transform_inv for details abouts the
-    optional `reg_weights` parameter.
     """
 
-    def __init__(self, anchors, spatial_scale, train, reg_weights=(1.0, 1.0, 1.0, 1.0)):
+    def __init__(self, anchors, spatial_scale, train):
         self._anchors = anchors
         self._num_anchors = self._anchors.shape[0]
         self._feat_stride = 1. / spatial_scale
         self._train = train
-        self._reg_weights = reg_weights
 
     def forward(self, inputs, outputs):
         """See modeling.detector.GenerateProposals for inputs/outputs
@@ -148,7 +144,8 @@ class GenerateProposalsOp(object):
         scores = scores[order]
 
         # Transform anchors into proposals via bbox transformations
-        proposals = box_utils.bbox_transform(all_anchors, bbox_deltas, self._reg_weights)
+        proposals = box_utils.bbox_transform(
+            all_anchors, bbox_deltas, (1.0, 1.0, 1.0, 1.0))
 
         # 2. clip proposals to image (may result in proposals with zero area
         # that will be removed in the next step)
@@ -171,6 +168,19 @@ class GenerateProposalsOp(object):
         return proposals, scores
 
 
+def _filter_boxes_yuanlai(boxes, min_size, im_info):
+    """Only keep boxes with both sides >= min_size and center within the image.
+    """
+    # Scale min_size to match image scale
+    min_size *= im_info[2]
+    ws = boxes[:, 2] - boxes[:, 0] + 1
+    hs = boxes[:, 3] - boxes[:, 1] + 1
+    x_ctr = boxes[:, 0] + ws / 2.
+    y_ctr = boxes[:, 1] + hs / 2.
+    keep = np.where(
+        (ws >= min_size) & (hs >= min_size) &
+        (x_ctr < im_info[1]) & (y_ctr < im_info[0]))[0]
+    return keep
 def _filter_boxes(boxes, min_size, im_info):
     """Only keep boxes with both sides >= min_size and center within the image.
     """

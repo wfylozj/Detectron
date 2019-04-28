@@ -82,12 +82,15 @@ class TrainingStats(object):
             self.model.roi_data_loader._minibatch_queue.qsize()
         )
 
-    def LogIterStats(self, cur_iter, lr):
+    def LogIterStats(self, cur_iter, lr, viz, win_accuracy_cls, win_loss, win_loss_bbox, win_loss_cls):
         """Log the tracked statistics."""
         if (cur_iter % self.LOG_PERIOD == 0 or
                 cur_iter == cfg.SOLVER.MAX_ITER - 1):
             stats = self.GetStats(cur_iter, lr)
-            log_json_stats(stats)
+            try:
+                log_json_stats(stats, viz, win_accuracy_cls, win_loss, win_loss_bbox, win_loss_cls)
+            except:
+                log_json_stats(stats)
 
     def GetStats(self, cur_iter, lr):
         eta_seconds = self.iter_timer.average_time * (

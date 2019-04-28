@@ -26,6 +26,7 @@ from __future__ import print_function
 from __future__ import unicode_literals
 
 import copy
+import cPickle as pickle
 import logging
 import numpy as np
 import os
@@ -42,7 +43,6 @@ from detectron.core.config import cfg
 from detectron.utils.timer import Timer
 import detectron.datasets.dataset_catalog as dataset_catalog
 import detectron.utils.boxes as box_utils
-from detectron.utils.io import load_object
 import detectron.utils.segms as segm_utils
 
 logger = logging.getLogger(__name__)
@@ -65,7 +65,9 @@ class JsonDataset(object):
         self.COCO = COCO(dataset_catalog.get_ann_fn(name))
         self.debug_timer = Timer()
         # Set up dataset classes
+
         category_ids = self.COCO.getCatIds()
+        print(self.COCO.loadCats(category_ids))
         categories = [c['name'] for c in self.COCO.loadCats(category_ids)]
         self.category_to_id_map = dict(zip(categories, category_ids))
         self.classes = ['__background__'] + categories
@@ -106,7 +108,11 @@ class JsonDataset(object):
             # Include ground-truth object annotations
             self.debug_timer.tic()
             for entry in roidb:
-                self._add_gt_annotations(entry)
+                try:
+                    self._add_gt_annotations(entry)
+                except:
+                    print('error')
+                    self._add_gt_annotations(entry)
             logger.debug(
                 '_add_gt_annotations took {:.3f}s'.
                 format(self.debug_timer.toc(average=False))
@@ -225,6 +231,12 @@ class JsonDataset(object):
                 gt_overlaps[ix, :] = -1.0
             else:
                 gt_overlaps[ix, cls] = 1.0
+        if 0:
+            for ii ,sub_gt_classes in  enumerate(gt_classes):
+                if sub_gt_classes == 1:   #s1 = 2 else 1
+                    gt_classes[ii] =0
+                    boxes[ii] = np.array([[0.1, 0.1, 1.0, 1.0]], dtype=np.float32)
+                    #box_to_gt_ind_map = np.array([-1], dtype=np.int32)
         entry['boxes'] = np.append(entry['boxes'], boxes, axis=0)
         entry['segms'].extend(valid_segms)
         # To match the original implementation:
@@ -251,8 +263,8 @@ class JsonDataset(object):
     ):
         """Add proposals from a proposals file to an roidb."""
         logger.info('Loading proposals from: {}'.format(proposal_file))
-        proposals = load_object(proposal_file)
-
+        with open(proposal_file, 'r') as f:
+            proposals = pickle.load(f)
         id_field = 'indexes' if 'indexes' in proposals else 'ids'  # compat fix
         _sort_proposals(proposals, id_field)
         box_list = []

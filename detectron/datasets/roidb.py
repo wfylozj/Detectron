@@ -30,8 +30,9 @@ import detectron.utils.boxes as box_utils
 import detectron.utils.keypoints as keypoint_utils
 import detectron.utils.segms as segm_utils
 
+import random
 logger = logging.getLogger(__name__)
-
+import math
 
 def combined_roidb_for_training(dataset_names, proposal_files):
     """Load and concatenate roidbs for one or more datasets, along with optional
@@ -39,12 +40,16 @@ def combined_roidb_for_training(dataset_names, proposal_files):
     which involves caching certain types of metadata for each roidb entry.
     """
     def get_roidb(dataset_name, proposal_file):
+        print('---------')
+        print('roidb.py----',dataset_name)
         ds = JsonDataset(dataset_name)
         roidb = ds.get_roidb(
             gt=True,
             proposal_file=proposal_file,
             crowd_filter_thresh=cfg.TRAIN.CROWD_FILTER_THRESH
         )
+        sum1 = 0
+        roidb0 = roidb*1 #for shanghai circuit
         if cfg.TRAIN.USE_FLIPPED:
             logger.info('Appending horizontally-flipped training examples...')
             extend_with_flipped_entries(roidb, ds)
@@ -65,10 +70,10 @@ def combined_roidb_for_training(dataset_names, proposal_files):
     roidb = filter_for_training(roidb)
 
     logger.info('Computing bounding-box regression targets...')
-    add_bbox_regression_targets(roidb)
+    add_bbox_regression_targets(roidb)  #non with rodb
     logger.info('done')
 
-    _compute_and_log_stats(roidb)
+    _compute_and_log_stats(roidb)  #non with rodb
 
     return roidb
 
@@ -129,7 +134,7 @@ def filter_for_training(roidb):
         return valid
 
     num = len(roidb)
-    filtered_roidb = [entry for entry in roidb if is_valid(entry)]
+    filtered_roidb = roidb*1#.copy()#[entry for entry in roidb if is_valid(entry)]
     num_after = len(filtered_roidb)
     logger.info('Filtered {} roidb entries: {} -> {}'.
                 format(num - num_after, num, num_after))

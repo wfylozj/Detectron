@@ -44,16 +44,17 @@ from collections import deque
 from collections import OrderedDict
 import logging
 import numpy as np
+import Queue
 import signal
 import threading
 import time
 import uuid
-from six.moves import queue as Queue
 
 from caffe2.python import core, workspace
 
 from detectron.core.config import cfg
 from detectron.roi_data.minibatch import get_minibatch
+from detectron.roi_data.minibatch import get_minibatch_s6
 from detectron.roi_data.minibatch import get_minibatch_blob_names
 from detectron.utils.coordinator import coordinated_get
 from detectron.utils.coordinator import coordinated_put
@@ -61,7 +62,7 @@ from detectron.utils.coordinator import Coordinator
 import detectron.utils.c2 as c2_utils
 
 logger = logging.getLogger(__name__)
-
+S6 = cfg.TRAIN.MULTI_SCALE
 
 class RoIDataLoader(object):
     def __init__(
@@ -131,7 +132,35 @@ class RoIDataLoader(object):
         while not valid:
             db_inds = self._get_next_minibatch_inds()
             minibatch_db = [self._roidb[i] for i in db_inds]
-            blobs, valid = get_minibatch(minibatch_db)
+            roidb_noclass = dict()
+            #print('S6:',S6)
+            if S6:#S6:  # for S5
+                for roidb_i, roidb_list in enumerate(self._roidb):
+                    if roidb_list[u'image'].split('/')[-1]==u'test.jpg':#==u'/home/icubic/daily_work/code/Detectron/detectron/datasets/data/aoi/data_all/test.png':
+                        #print('test.jpg')
+                        roidb_noclass = self._roidb[roidb_i].copy()
+                    if 0:
+                        if len(roidb_list[u'gt_classes']) == 1 :#and roidb_list[u'gt_classes'][0] ==1:
+                            roidb_noclass['1'] = self._roidb[roidb_i]
+
+
+
+                        if len(roidb_list[u'gt_classes']) == 2:
+                            roidb_noclass['2'] = self._roidb[roidb_i]
+
+
+                        if len(roidb_list[u'gt_classes']) == 3 and roidb_list[u'gt_classes'][0] ==2:
+                            roidb_noclass['3'] = self._roidb[roidb_i]
+
+                        if len(roidb_list[u'gt_classes']) >3:
+                            print('more')
+                    #roidb_noclass['3'] = self._roidb[roidb_i]
+            #if len(minibatch_db[0][u'gt_classes']) == 0:
+            #    print('aa')
+            if S6:
+                blobs, valid = get_minibatch_s6(minibatch_db,roidb_noclass)
+            else:
+                blobs, valid = get_minibatch(minibatch_db)
         return blobs
 
     def _shuffle_roidb_inds(self):
@@ -173,12 +202,26 @@ class RoIDataLoader(object):
             if self._cur >= len(self._perm):
                 self._shuffle_roidb_inds()
         return db_inds
+    def _get_next_minibatch_inds_s6(self):
+        """Return the roidb indices for the next minibatch. Thread safe."""
+        with self._lock:
+            # We use a deque and always take the *first* IMS_PER_BATCH items
+            # followed by *rotating* the deque so that we see fresh items
+            # each time. If the length of _perm is not divisible by
+            # IMS_PER_BATCH, then we end up wrapping around the permutation.
+            db_inds = [self._perm[i] for i in range(cfg.TRAIN.IMS_PER_BATCH)]
+            self._perm.rotate(-cfg.TRAIN.IMS_PER_BATCH)
+            self._cur += cfg.TRAIN.IMS_PER_BATCH
+            if self._cur >= len(self._perm):
+                self._shuffle_roidb_inds()
+        return db_inds
 
     def get_output_names(self):
         return self._output_names
 
     def enqueue_blobs(self, gpu_id, blob_names, blobs):
         """Put a mini-batch on a BlobsQueue."""
+        #print('------loader.py enqueue_blobs')
         assert len(blob_names) == len(blobs)
         t = time.time()
         dev = c2_utils.CudaDevice(gpu_id)
@@ -224,7 +267,6 @@ class RoIDataLoader(object):
 
     def start(self, prefill=False):
         for w in self._workers + self._enqueuers:
-            w.setDaemon(True)
             w.start()
         if prefill:
             logger.info('Pre-filling mini-batch queue...')
@@ -240,9 +282,6 @@ class RoIDataLoader(object):
                 if self.coordinator.should_stop():
                     self.shutdown()
                     break
-
-    def has_stopped(self):
-        return self.coordinator.should_stop()
 
     def shutdown(self):
         self.coordinator.request_stop()

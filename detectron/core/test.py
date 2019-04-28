@@ -45,35 +45,38 @@ import detectron.utils.blob as blob_utils
 import detectron.utils.boxes as box_utils
 import detectron.utils.image as image_utils
 import detectron.utils.keypoints as keypoint_utils
+import time
 
 logger = logging.getLogger(__name__)
 
 
 def im_detect_all(model, im, box_proposals, timers=None):
-    if timers is None:
-        timers = defaultdict(Timer)
+    #if timers is None:
+    #    timers = defaultdict(Timer)
 
     # Handle RetinaNet testing separately for now
     if cfg.RETINANET.RETINANET_ON:
         cls_boxes = test_retinanet.im_detect_bbox(model, im, timers)
         return cls_boxes, None, None
-
-    timers['im_detect_bbox'].tic()
+    start_time = time.time()
+    #timers['im_detect_bbox'].tic()
     if cfg.TEST.BBOX_AUG.ENABLED:
         scores, boxes, im_scale = im_detect_bbox_aug(model, im, box_proposals)
     else:
         scores, boxes, im_scale = im_detect_bbox(
             model, im, cfg.TEST.SCALE, cfg.TEST.MAX_SIZE, boxes=box_proposals
         )
-    timers['im_detect_bbox'].toc()
+    end_time = time.time()
+    #print('take {} seconds '.format(end_time - start_time))
+    ##timers['im_detect_bbox'].toc()
 
     # score and boxes are from the whole image after score thresholding and nms
     # (they are not separated by class)
     # cls_boxes boxes and scores are separated by class and in the format used
     # for evaluating results
-    timers['misc_bbox'].tic()
+    ##timers['misc_bbox'].tic()
     scores, boxes, cls_boxes = box_results_with_nms_and_limit(scores, boxes)
-    timers['misc_bbox'].toc()
+    ##timers['misc_bbox'].toc()
 
     if cfg.MODEL.MASK_ON and boxes.shape[0] > 0:
         timers['im_detect_mask'].tic()
@@ -81,13 +84,13 @@ def im_detect_all(model, im, box_proposals, timers=None):
             masks = im_detect_mask_aug(model, im, boxes)
         else:
             masks = im_detect_mask(model, im_scale, boxes)
-        timers['im_detect_mask'].toc()
+        #timers['im_detect_mask'].toc()
 
-        timers['misc_mask'].tic()
+        #timers['misc_mask'].tic()
         cls_segms = segm_results(
             cls_boxes, masks, boxes, im.shape[0], im.shape[1]
         )
-        timers['misc_mask'].toc()
+        #timers['misc_mask'].toc()
     else:
         cls_segms = None
 

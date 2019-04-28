@@ -218,7 +218,8 @@ class DetectionModelHelper(cnn.CNNModelHelper):
             is_training=self.train
         )
         blobs_out = [core.ScopedBlobReference(b) for b in blobs_out]
-
+        #aa = CollectAndDistributeFpnRpnProposalsOp(self.train)
+        #bb = aa.forward(blobs_in, blobs_out)
         outputs = self.net.Python(
             CollectAndDistributeFpnRpnProposalsOp(self.train).forward
         )(blobs_in, blobs_out, name=name)

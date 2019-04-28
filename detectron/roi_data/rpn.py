@@ -80,11 +80,26 @@ def add_rpn_blobs(blobs, im_scales, roidb):
             cfg.RPN.STRIDE, cfg.RPN.SIZES, cfg.RPN.ASPECT_RATIOS
         )
         all_anchors = foa.field_of_anchors
-
+    if 0:
+        for jj,sub_roidb in enumerate(roidb):
+            for zz, sub_classes in enumerate(sub_roidb['gt_classes']):
+                if sub_classes ==4 :
+                    if len(sub_roidb['gt_classes'])>1:
+                        print('bb')
+                    roidb[jj]['gt_classes'][zz] = 0
+                    roidb[jj]['max_classes'][zz] = 0
+                    roidb[jj]['boxes'][zz] = np.array([[0.1, 0.1, 1.0, 1.0]], dtype=np.float32)
     for im_i, entry in enumerate(roidb):
-        scale = im_scales[im_i]
+        try:
+            scale = im_scales[im_i]
+        except:
+            print('error')
         im_height = np.round(entry['height'] * scale)
         im_width = np.round(entry['width'] * scale)
+        if 0:
+            for ii, sub_gt_classes in enumerate(entry['gt_classes']):
+                if sub_gt_classes == 0:
+                    print('aaa')
         gt_inds = np.where(
             (entry['gt_classes'] > 0) & (entry['is_crowd'] == 0)
         )[0]
@@ -184,53 +199,65 @@ def _get_rpn_blobs(im_height, im_width, foas, all_anchors, gt_boxes):
         labels[anchors_with_max_overlap] = 1
         # Fg label: above threshold IOU
         labels[anchor_to_gt_max >= cfg.TRAIN.RPN_POSITIVE_OVERLAP] = 1
+    if len(gt_boxes) == 0:
+        enable_inds =  npr.randint(num_inside, size=256)
+        labels[enable_inds] = 0
+        bg_inds = np.where(labels == 0)[0]
+        bbox_targets = np.zeros((num_inside, 4), dtype=np.float32)
+        bbox_inside_weights = np.zeros((num_inside, 4), dtype=np.float32)
+        bbox_outside_weights = np.zeros((num_inside, 4), dtype=np.float32)
+        # uniform weighting of examples (given non-uniform sampling)
+        num_examples = np.sum(labels >= 0)
+        bbox_outside_weights[labels == 1, :] = 1.0 / num_examples
+        bbox_outside_weights[labels == 0, :] = 1.0 / num_examples
+        #bg_inds = np.where(labels == 0)[0]
+        #print('aa')
 
+    #if len(gt_boxes) == 0:
     # subsample positive labels if we have too many
-    num_fg = int(cfg.TRAIN.RPN_FG_FRACTION * cfg.TRAIN.RPN_BATCH_SIZE_PER_IM)
-    fg_inds = np.where(labels == 1)[0]
-    if len(fg_inds) > num_fg:
-        disable_inds = npr.choice(
-            fg_inds, size=(len(fg_inds) - num_fg), replace=False
+    if len(gt_boxes) > 0:
+        num_fg = int(cfg.TRAIN.RPN_FG_FRACTION * cfg.TRAIN.RPN_BATCH_SIZE_PER_IM)
+        fg_inds = np.where(labels == 1)[0]
+        if len(fg_inds) > num_fg:
+            disable_inds = npr.choice(
+                fg_inds, size=(len(fg_inds) - num_fg), replace=False
+            )
+            labels[disable_inds] = -1
+        fg_inds = np.where(labels == 1)[0]
+
+        # subsample negative labels if we have too many
+        # (samples with replacement, but since the set of bg inds is large most
+        # samples will not have repeats)
+        num_bg = cfg.TRAIN.RPN_BATCH_SIZE_PER_IM - np.sum(labels == 1)
+        bg_inds = np.where(anchor_to_gt_max < cfg.TRAIN.RPN_NEGATIVE_OVERLAP)[0]
+        if len(bg_inds) > num_bg:
+            enable_inds = bg_inds[npr.randint(len(bg_inds), size=num_bg)]
+            labels[enable_inds] = 0
+        bg_inds = np.where(labels == 0)[0]
+
+        bbox_targets = np.zeros((num_inside, 4), dtype=np.float32)
+        bbox_targets[fg_inds, :] = data_utils.compute_targets(
+            anchors[fg_inds, :], gt_boxes[anchor_to_gt_argmax[fg_inds], :]
         )
-        labels[disable_inds] = -1
-    fg_inds = np.where(labels == 1)[0]
 
-    # subsample negative labels if we have too many
-    # (samples with replacement, but since the set of bg inds is large most
-    # samples will not have repeats)
-    num_bg = cfg.TRAIN.RPN_BATCH_SIZE_PER_IM - np.sum(labels == 1)
-    bg_inds = np.where(anchor_to_gt_max < cfg.TRAIN.RPN_NEGATIVE_OVERLAP)[0]
-    if len(bg_inds) > num_bg:
-        enable_inds = bg_inds[npr.randint(len(bg_inds), size=num_bg)]
-    else:
-        enable_inds = bg_inds
+        # Bbox regression loss has the form:
+        #   loss(x) = weight_outside * L(weight_inside * x)
+        # Inside weights allow us to set zero loss on an element-wise basis
+        # Bbox regression is only trained on positive examples so we set their
+        # weights to 1.0 (or otherwise if config is different) and 0 otherwise
+        bbox_inside_weights = np.zeros((num_inside, 4), dtype=np.float32)
+        bbox_inside_weights[labels == 1, :] = (1.0, 1.0, 1.0, 1.0)
 
-    labels[enable_inds] = 0
-    bg_inds = np.where(labels == 0)[0]
-
-    bbox_targets = np.zeros((num_inside, 4), dtype=np.float32)
-    bbox_targets[fg_inds, :] = data_utils.compute_targets(
-        anchors[fg_inds, :], gt_boxes[anchor_to_gt_argmax[fg_inds], :]
-    )
-
-    # Bbox regression loss has the form:
-    #   loss(x) = weight_outside * L(weight_inside * x)
-    # Inside weights allow us to set zero loss on an element-wise basis
-    # Bbox regression is only trained on positive examples so we set their
-    # weights to 1.0 (or otherwise if config is different) and 0 otherwise
-    bbox_inside_weights = np.zeros((num_inside, 4), dtype=np.float32)
-    bbox_inside_weights[labels == 1, :] = (1.0, 1.0, 1.0, 1.0)
-
-    # The bbox regression loss only averages by the number of images in the
-    # mini-batch, whereas we need to average by the total number of example
-    # anchors selected
-    # Outside weights are used to scale each element-wise loss so the final
-    # average over the mini-batch is correct
-    bbox_outside_weights = np.zeros((num_inside, 4), dtype=np.float32)
-    # uniform weighting of examples (given non-uniform sampling)
-    num_examples = np.sum(labels >= 0)
-    bbox_outside_weights[labels == 1, :] = 1.0 / num_examples
-    bbox_outside_weights[labels == 0, :] = 1.0 / num_examples
+        # The bbox regression loss only averages by the number of images in the
+        # mini-batch, whereas we need to average by the total number of example
+        # anchors selected
+        # Outside weights are used to scale each element-wise loss so the final
+        # average over the mini-batch is correct
+        bbox_outside_weights = np.zeros((num_inside, 4), dtype=np.float32)
+        # uniform weighting of examples (given non-uniform sampling)
+        num_examples = np.sum(labels >= 0)
+        bbox_outside_weights[labels == 1, :] = 1.0 / num_examples
+        bbox_outside_weights[labels == 0, :] = 1.0 / num_examples
 
     # Map up to original set of anchors
     labels = data_utils.unmap(labels, total_anchors, inds_inside, fill=-1)

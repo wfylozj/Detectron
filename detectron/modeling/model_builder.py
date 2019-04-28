@@ -396,11 +396,14 @@ def add_training_inputs(model, roidb=None):
             model.net.DequeueBlobs(
                 model.roi_data_loader._blobs_queue_name, blob_names
             )
+        queue_name = '1'#blobs_queue_name * 1
     # A little op surgery to move input ops to the start of the net
     diff = len(model.net._net.op) - orig_num_op
     new_op = model.net._net.op[-diff:] + model.net._net.op[:-diff]
     del model.net._net.op[:]
     model.net._net.op.extend(new_op)
+
+    return queue_name
 
 
 def add_inference_inputs(model):

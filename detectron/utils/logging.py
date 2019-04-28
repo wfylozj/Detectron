@@ -28,14 +28,40 @@ import numpy as np
 import smtplib
 import sys
 
-
-def log_json_stats(stats, sort_keys=True):
+def log_json_stats(stats, viz, win_accuracy_cls, win_loss, win_loss_bbox, win_loss_cls, sort_keys=True):
     # hack to control precision of top-level floats
     stats = {
         k: '{:.6f}'.format(v) if isinstance(v, float) else v
         for k, v in stats.items()
     }
     print('json_stats: {:s}'.format(json.dumps(stats, sort_keys=sort_keys)))
+    try:
+        print("iter: " + str(stats.get("iter")))
+        print("loss: " + str(stats.get("loss")))
+        print("np iter: " + str(np.array([float(stats.get("iter"))])))
+        print("np loss: " + str(np.array([float(stats.get("loss"))])))
+        viz.line(
+            X=np.array([float(stats.get("iter"))]),
+            Y=np.array([float(stats.get("accuracy_cls"))]),
+            win=win_accuracy_cls,
+            update='append')
+        viz.line(
+            X=np.array([float(stats.get("iter"))]),
+            Y=np.array([float(stats.get("loss"))]),
+            win=win_loss,
+            update='append')
+        viz.line(
+            X=np.array([float(stats.get("iter"))]),
+            Y=np.array([float(stats.get("loss_bbox"))]),
+            win=win_loss_bbox,
+            update='append')
+        viz.line(
+            X=np.array([float(stats.get("iter"))]),
+            Y=np.array([float(stats.get("loss_cls"))]),
+            win=win_loss_cls,
+            update='append')
+    except:
+        print('error: detectron/utils/logging.py log_json_stats')
 
 
 class SmoothedValue(object):

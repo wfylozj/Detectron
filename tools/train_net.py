@@ -39,6 +39,7 @@ from detectron.core.test_engine import run_inference
 from detectron.utils.logging import setup_logging
 import detectron.utils.c2 as c2_utils
 import detectron.utils.train
+from visdom import Visdom
 
 c2_utils.import_contrib_ops()
 c2_utils.import_detectron_ops()
@@ -111,7 +112,7 @@ def main():
     # non-deterministic cudnn functions).
     np.random.seed(cfg.RNG_SEED)
     # Execute the training run
-    checkpoints = detectron.utils.train.train_model()
+    checkpoints = detectron.utils.train.train_model(viz, win_accuracy_cls, win_loss, win_loss_bbox, win_loss_cls)
     # Test the trained model
     if not args.skip_test:
         test_model(checkpoints['final'], args.multi_gpu_testing, args.opts)
@@ -129,4 +130,21 @@ def test_model(model_file, multi_gpu_testing, opts=None):
 
 
 if __name__ == '__main__':
+    viz = Visdom(env='main')
+    win_accuracy_cls = viz.line(
+        X=np.array([0]),
+        Y=np.array([0]),
+        opts=dict(title='accuracy_cls', width=1024, height=520))
+    win_loss = viz.line(
+        X=np.array([0]),
+        Y=np.array([0]),
+        opts=dict(title='loss', width=1024, height=520))
+    win_loss_bbox = viz.line(
+        X=np.array([0]),
+        Y=np.array([0]),
+        opts=dict(title='loss_bbox', width=1024, height=520))
+    win_loss_cls = viz.line(
+        X=np.array([0]),
+        Y=np.array([0]),
+        opts=dict(title='loss_cls', width=1024, height=520))
     main()
